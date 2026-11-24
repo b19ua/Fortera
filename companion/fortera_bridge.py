@@ -79,8 +79,8 @@ def assert_local_sitl_environment(url):
         raise RuntimeError("SITL dispatch requires ws:// on loopback; remote/WSS targets are not accepted")
     if os.getenv("FORTERA_BACKEND") != "mavsdk":
         raise RuntimeError("SITL dispatch requires FORTERA_BACKEND=mavsdk on the companion gateway")
-    endpoint_map = json.loads(os.getenv("FORTERA_MAVSDK_ENDPOINTS", '{"F01":"udpin://0.0.0.0:14540"}'))
-    if not endpoint_map or any(urlparse(v).hostname not in {"0.0.0.0", "127.0.0.1", "localhost", "::"} for v in endpoint_map.values()):
+    endpoint_map = json.loads(os.getenv("FORTERA_MAVSDK_ENDPOINTS", '{"F01":"udpin://127.0.0.1:14540"}'))
+    if not endpoint_map or any(urlparse(v).hostname not in {"127.0.0.1", "localhost", "::1"} for v in endpoint_map.values()):
         raise RuntimeError("All MAVSDK endpoints must be loopback/local for SITL")
     if os.getenv("FORTERA_ENABLE_HARDWARE") != "1":
         raise RuntimeError("Gateway local interlock is off; enable only for this supervised SITL session")
