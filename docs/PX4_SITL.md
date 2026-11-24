@@ -65,7 +65,7 @@ Terminal C:
     export FORTERA_BRIDGE_TOKEN="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
     export FORTERA_ALLOWED_ORIGINS="http://localhost:8080"
     export FORTERA_BACKEND=mavsdk
-    export FORTERA_MAVSDK_ENDPOINTS='{"F01":"udpin://0.0.0.0:14540"}'
+    export FORTERA_MAVSDK_ENDPOINTS='{"F01":"udpin://127.0.0.1:14540"}'
     export FORTERA_BIND=127.0.0.1
     export FORTERA_PORT=8765
     export FORTERA_SITL_MODE=1
