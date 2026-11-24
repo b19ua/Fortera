@@ -48,5 +48,20 @@
   },
   "runtime_client": "fortera_runtime/client.py",
   "runtime_tests": "8 test methods; verify locally",
-  "weights_host": "https://huggingface.co/Askit87/Fortera"
+  "weights_host": "https://huggingface.co/Askit87/Fortera",
+  "companion_bridge": {
+    "protocol": "fortera.bridge/2",
+    "source": "bridge/",
+    "fortera_adapter": "companion/fortera_bridge.py",
+    "default_mode": "proposal-only",
+    "sitl_dispatch_gate": "explicit CLI confirmation plus loopback-only bridge and MAVSDK endpoints",
+    "supported_model_actions": [
+      "takeoff",
+      "goto",
+      "hold",
+      "hover"
+    ],
+    "end_to_end_px4_sitl_verified": false,
+    "physical_flight_verified": false
+  }
 }
