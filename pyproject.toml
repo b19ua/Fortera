@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+[project]
+name = "fortera-edge-runtime"
+version = "0.1.0"
+description = "Offline local inference and fail-closed proposal validation"
+requires-python = ">=3.10"
+dependencies = ["requests>=2.31,<3", "transformers>=4.51,<5"]
+[project.scripts]
+fortera = "fortera_runtime.client:main"
+[tool.setuptools]
+packages = ["fortera_runtime"]
