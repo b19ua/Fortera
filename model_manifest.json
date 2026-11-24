@@ -1,0 +1,52 @@
+{
+  "name": "Fortera",
+  "publisher": "AskIt AI",
+  "release": "0.1.0",
+  "base_model": "Qwen/Qwen3-1.7B",
+  "upstream_license": "Apache-2.0",
+  "upstream_license_revision": "70d244c",
+  "adapter": "qwen3-1.7b-fortera-lora-v1",
+  "merge": "PEFT merge_and_unload safe_merge",
+  "format": "GGUF",
+  "quantization": "Q4_K_M",
+  "gguf_bytes": 1107408832,
+  "gguf_sha256": "40c2f703106f4dc855ac071c71cf6ddac275869722081bbc05337f5f29395a44",
+  "target_runtime": "llama.cpp ARM64 CPU",
+  "api_dependency": null,
+  "languages": [
+    "en",
+    "ru",
+    "ar",
+    "de"
+  ],
+  "training": {
+    "train_examples": 396,
+    "validation_examples": 108,
+    "synthetic_template_authored": true
+  },
+  "validation": {
+    "samples": 108,
+    "valid_json_outputs": 108,
+    "exact_command_matches_before_normalization": 103,
+    "exact_command_matches_after_simulator_hold_to_hover_normalization": 108,
+    "hardware_tested": false
+  },
+  "multilingual_smoke_test": {
+    "passed": 4,
+    "total": 4,
+    "languages": [
+      "en",
+      "ru",
+      "ar",
+      "de"
+    ],
+    "scenario": "15m takeoff instruction in simulator mode"
+  },
+  "safety": {
+    "dispatch_enabled": false,
+    "description": "Model proposals require independent deterministic policy validation; no physical dispatch in this package."
+  },
+  "runtime_client": "fortera_runtime/client.py",
+  "runtime_tests": "8 test methods; verify locally",
+  "weights_host": "https://huggingface.co/Askit87/Fortera"
+}
