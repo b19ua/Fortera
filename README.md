@@ -34,7 +34,7 @@ Training data: 396 train + 108 validation synthetic/template-authored examples, 
 ## Safety
 Never connect raw model output directly to MAVLink/MAVSDK, motors, actuators, or a flight controller. The validator is a narrow schema/parameter gate, not a complete flight-safety policy. A downstream system must independently enforce operator authorization, battery/vehicle health, telemetry freshness, GPS/home, flight mode, obstacle sensing, geofence, waypoint permissions, lost-link behavior, and autopilot failsafes. Physical dispatch must remain disabled until separately engineered PX4 SITL, HIL, and supervised hardware testing are completed.
 
-## License
-Apache-2.0. Fortera is a fine-tuned derivative of `Qwen/Qwen3-1.7B`; full upstream license and attribution notices are in the Hugging Face repository. See https://huggingface.co/Askit87/Fortera for the model card and license scope.
+## License and provenance
+The **model weights** are a fine-tuned derivative of `Qwen/Qwen3-1.7B`, whose upstream license is Apache-2.0. The full upstream license and attribution notices are included in the [Hugging Face model repository](https://huggingface.co/Askit87/Fortera). The runtime source code in this GitHub repository does not yet have a separately declared license; do not assume the model-weights license automatically applies to every source file here. See [LICENSE_SCOPE.md](LICENSE_SCOPE.md) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 **Published by AskIt AI.**
