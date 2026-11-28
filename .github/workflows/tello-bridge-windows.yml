@@ -1,0 +1,44 @@
+name: Fortera Tello Bridge - Windows CI and Package
+
+on:
+  push:
+    branches:
+      - windows-tello-installer-2026-11-28
+  workflow_dispatch:
+
+jobs:
+  test-and-package:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install bridge dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r bridge/requirements.txt
+
+      - name: Run the complete bridge test suite
+        shell: pwsh
+        working-directory: bridge
+        run: |
+          python -m unittest discover -s . -p "test_*.py" -v
+
+      - name: Build Windows installation package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Compress-Archive -Path bridge, INSTALL_FORTERA_TELLO.bat, install_fortera_tello.ps1, FORTERA_TELLO_WINDOWS_README_RU.txt -DestinationPath dist/ForteraTelloBridge_Windows.zip -Force
+
+      - name: Upload tested Windows package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ForteraTelloBridge-Windows
+          path: dist/ForteraTelloBridge_Windows.zip
+          retention-days: 30
