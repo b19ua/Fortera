@@ -8,8 +8,8 @@ Write-Host ""
 
 $arch = $env:PROCESSOR_ARCHITECTURE
 if ($env:PROCESSOR_ARCHITEW6432) { $arch = $env:PROCESSOR_ARCHITEW6432 }
-if ($arch -notmatch 'AMD64|ARM64') {
-    throw "This installer requires 64-bit Windows (x64 or ARM64). Detected: $arch"
+if ($arch -notmatch 'AMD64') {
+    throw "This installer currently supports Windows x64 only. Detected: $arch"
 }
 
 $packageBridge = Join-Path $PSScriptRoot "bridge"
@@ -31,7 +31,7 @@ if (-not (Test-Path $pythonExe)) {
     Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing
     Write-Host "[2/4] Installing private Python runtime..." -ForegroundColor Yellow
     $args = @(
-        "/quiet", "InstallAllUsers=0", "TargetDir=$pythonDir",
+        "/quiet", "InstallAllUsers=0", "TargetDir=`"$pythonDir`"",
         "Include_pip=1", "Include_tcltk=1", "Include_test=0",
         "PrependPath=0", "Shortcuts=0", "Include_launcher=0"
     )
