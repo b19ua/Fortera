@@ -175,9 +175,59 @@ async def main():
     await backend.start();gateway=Gateway(backend,token,origins,os.environ.get('FORTERA_ENABLE_HARDWARE')=='1',points,radius,minimum);gateway.video=video
     monitor=asyncio.create_task(gateway.monitor_obstacles())
     if video_server: await video_server.start()
+
+    # Authenticated loopback-only shutdown endpoint used by the Windows GUI.
+    # It is deliberately separate from the browser/flight protocol.
+    control_token=os.environ.get('FORTERA_CONTROL_TOKEN','')
+    stop_event=asyncio.Event()
+    async def control_handler(reader,writer):
+        try:
+            head=await asyncio.wait_for(reader.readuntil(b'\\r\\n\\r\\n'),2)
+            if len(head)>8192: raise ValueError('oversized control request')
+            lines=head.decode('latin-1').split('\\r\\n')
+            bits=lines[0].split(' ')
+            headers={k.strip().lower():v.strip() for k,v in (line.split(':',1) for line in lines[1:] if ':' in line)}
+            ok=(len(bits)==3 and bits[0]=='POST' and bits[1]=='/shutdown'
+                and len(control_token)>=24
+                and hmac.compare_digest(headers.get('x-fortera-control-token',''),control_token))
+            status='202 Accepted' if ok else '403 Forbidden'
+            body=b'Bridge shutdown accepted' if ok else b'Forbidden'
+            writer.write((f'HTTP/1.1 {status}\\r\\nContent-Length: {len(body)}\\r\\nConnection: close\\r\\n\\r\\n').encode()+body)
+            await writer.drain()
+            if ok: stop_event.set()
+        except Exception:
+            try:
+                writer.write(b'HTTP/1.1 400 Bad Request\\r\\nContent-Length: 0\\r\\nConnection: close\\r\\n\\r\\n')
+                await writer.drain()
+            except Exception: pass
+        finally:
+            writer.close()
+            try: await writer.wait_closed()
+            except Exception: pass
+    control_server=None
+    if control_token:
+        if len(control_token)<24: raise SystemExit('FORTERA_CONTROL_TOKEN must be at least 24 characters')
+        control_server=await asyncio.start_server(control_handler,'127.0.0.1',int(os.environ.get('FORTERA_CONTROL_PORT','8767')))
+    ws_server=await serve(gateway.handler,host,int(os.environ.get('FORTERA_PORT','8765')),ssl=tls,max_size=8192,ping_interval=10)
     try:
-        async with serve(gateway.handler,host,int(os.environ.get('FORTERA_PORT','8765')),ssl=tls,max_size=8192,ping_interval=10):
-            print('Fortera bridge ready:',mode,flush=True);await asyncio.Future()
+        print('Fortera bridge ready:',mode,flush=True)
+        await stop_event.wait()
     finally:
+        ws_server.close()
+        await ws_server.wait_closed()
+        if control_server:
+            control_server.close();await control_server.wait_closed()
         monitor.cancel();await asyncio.gather(monitor,return_exceptions=True)
+        if video_server: await video_server.close()
+        # Graceful local shutdown: request a hold even if the browser session already disconnected.
+        if hasattr(backend,'hold'):
+            try: await asyncio.wait_for(backend.hold(),3)
+            except Exception: pass
+        if getattr(backend,'reader',None): backend.reader.stop()
+        for task in getattr(backend,'tasks',[]):
+            task.cancel()
+        if getattr(backend,'tasks',None): await asyncio.gather(*backend.tasks,return_exceptions=True)
+        for attr in ('transport','state_transport'):
+            transport=getattr(backend,attr,None)
+            if transport: transport.close()
 if __name__=='__main__':asyncio.run(main())
