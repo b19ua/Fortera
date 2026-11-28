@@ -182,9 +182,9 @@ async def main():
     stop_event=asyncio.Event()
     async def control_handler(reader,writer):
         try:
-            head=await asyncio.wait_for(reader.readuntil(b'\\r\\n\\r\\n'),2)
+            head=await asyncio.wait_for(reader.readuntil(b'\r\n\r\n'),2)
             if len(head)>8192: raise ValueError('oversized control request')
-            lines=head.decode('latin-1').split('\\r\\n')
+            lines=head.decode('latin-1').split('\r\n')
             bits=lines[0].split(' ')
             headers={k.strip().lower():v.strip() for k,v in (line.split(':',1) for line in lines[1:] if ':' in line)}
             ok=(len(bits)==3 and bits[0]=='POST' and bits[1]=='/shutdown'
@@ -192,12 +192,12 @@ async def main():
                 and hmac.compare_digest(headers.get('x-fortera-control-token',''),control_token))
             status='202 Accepted' if ok else '403 Forbidden'
             body=b'Bridge shutdown accepted' if ok else b'Forbidden'
-            writer.write((f'HTTP/1.1 {status}\\r\\nContent-Length: {len(body)}\\r\\nConnection: close\\r\\n\\r\\n').encode()+body)
+            writer.write((f'HTTP/1.1 {status}\r\nContent-Length: {len(body)}\r\nConnection: close\r\n\r\n').encode()+body)
             await writer.drain()
             if ok: stop_event.set()
         except Exception:
             try:
-                writer.write(b'HTTP/1.1 400 Bad Request\\r\\nContent-Length: 0\\r\\nConnection: close\\r\\n\\r\\n')
+                writer.write(b'HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n')
                 await writer.drain()
             except Exception: pass
         finally:
