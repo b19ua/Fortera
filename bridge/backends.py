@@ -6,7 +6,7 @@ from obstacles import ObstacleSensing, receive_ranges
 class BenchBackend:
     mode = 'bench'
     def __init__(self, count=5):
-        self.vehicles = {f'F{i+1:02}': dict(id=f'F{i+1:02}', backend='bench', lat=25.1972, lon=55.2744+i*0.0001, relative_alt_m=0, battery_pct=100, armed=False, ready=True, mode='GROUND', capabilities=['hold','takeoff','goto','return_home','land']) for i in range(count)}
+        self.vehicles = {f'F{i+1:02}': dict(id=f'F{i+1:02}', backend='bench', lat=25.1972, lon=55.2744+i*0.0001, relative_alt_m=0, battery_pct=100, armed=False, ready=True, mode='GROUND', ground_speed_mps=0, capabilities=['hold','takeoff','goto','return_home','land']) for i in range(count)}
         self.waypoints=[];self.landing_radius_m=12;self.min_clearance_m=10
         for v in self.vehicles.values(): v.update(home_lat=v['lat'],home_lon=v['lon'])
     async def start(self): pass
@@ -55,7 +55,9 @@ class MavsdkBackend:
                 async for b in system.telemetry.battery(): self.vehicles[vid]['battery_pct']=max(0,min(100,b.remaining_percent*100));self.battery_updated[vid]=time.monotonic()
             async def mode(vid=vid,system=system):
                 async for m in system.telemetry.flight_mode(): self.vehicles[vid]['mode']=str(m)
-            for fn in (position,home,health,armed,battery,mode): self.tasks.append(asyncio.create_task(fn()))
+            async def velocity(vid=vid,system=system):
+                async for v in system.telemetry.velocity_ned(): self.vehicles[vid]['ground_speed_mps']=round(math.hypot(v.north_m_s,v.east_m_s),2)
+            for fn in (position,home,health,armed,battery,mode,velocity): self.tasks.append(asyncio.create_task(fn()))
             for name in ('DISTANCE_SENSOR','OBSTACLE_DISTANCE'):
                 self.tasks.append(asyncio.create_task(receive_ranges(system,name,self.obstacles[vid])))
     def refresh(self):
