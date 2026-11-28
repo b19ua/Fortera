@@ -297,12 +297,6 @@ class BridgeManager:
 
     def on_close(self):
         if self.process and self.process.poll() is None:
-            if not messagebox.askyesno(
-                "Fortera bridge is running",
-                "The bridge is still active. Stop it gracefully?\n\n"
-                "Only stop after landing the drone from the Live Drone page."
-            ):
-                return
             self.stop_bridge()
             self.root.after(900, self.check_close_complete)
             return
