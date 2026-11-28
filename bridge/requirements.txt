@@ -1,3 +1,7 @@
 websockets>=15.0,<16
 # Optional MAVLink/PX4 backend: install tested mavsdk<4 or mavsdk-grpc with matching server and MavlinkDirect support.
 # ROS 2 backend uses system-provided rclpy, nav2_msgs, nav_msgs, geometry_msgs, sensor_msgs.
+# Tello backend local camera checks (warning-only): OpenCV with FFmpeg decodes the H.264 stream; numpy for analysis.
+opencv-python-headless>=4.9,<5
+numpy>=1.26
+# Optional: onnxruntime for extra warning-only detectors (not required).
