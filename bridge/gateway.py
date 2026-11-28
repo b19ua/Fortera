@@ -2,12 +2,12 @@
 import asyncio, collections, hmac, json, math, os, secrets, ssl, time
 from websockets.asyncio.server import serve
 from backends import BenchBackend, MavsdkBackend, Ros2Backend
-from policy import preflight_plan, load_waypoints, landing_radius
+from policy import preflight_plan, load_waypoints, landing_radius, resolve_profile
 from obstacles import sensing_reason
 VERSION='fortera.bridge/2'
 
 
-def validate_command(msg,vehicles,now=None,waypoints=None,radius=12,minimum=10):
+def validate_command(msg,vehicles,now=None,waypoints=None,radius=12,minimum=10,profile=None):
     now=now or time.time()*1000
     if msg.get('v')!=VERSION or msg.get('type')!='command': raise ValueError('Unsupported protocol')
     if not isinstance(msg.get('id'),str) or not 1<=len(msg['id'])<=64: raise ValueError('Invalid command id')
@@ -18,7 +18,7 @@ def validate_command(msg,vehicles,now=None,waypoints=None,radius=12,minimum=10):
     raw=msg.get('actions') if 'actions' in msg else [msg.get('action')]
     if 'actions' in msg and 'action' in msg: raise ValueError('Use action or actions, not both')
     if not isinstance(raw,list) or not 1<=len(raw)<=32: raise ValueError('Plan must contain 1–32 actions')
-    actions=preflight_plan(v,raw,waypoints or [],radius,minimum)
+    actions=preflight_plan(v,raw,waypoints or [],radius,minimum,profile)
     return vid,actions if 'actions' in msg else actions[0]
 
 class Gateway:
@@ -53,6 +53,10 @@ class Gateway:
         while True:
             if hasattr(self.backend,'refresh'):self.backend.refresh()
             await self.enforce_obstacle_safety()
+            # Tello: local camera/state watchdog. Acts only when hardware commands are enabled locally.
+            if hasattr(self.backend,'watchdog'):
+                try: await self.backend.watchdog(self.backend.mode=='bench' or self.enabled)
+                except Exception: pass
             await asyncio.sleep(.1)
     async def handler(self,ws):
         origin=ws.request.headers.get('Origin')
@@ -63,21 +67,24 @@ class Gateway:
         except Exception: await ws.close(1008,'Pairing rejected');return
         if self.owner is not None: await ws.close(1008,'Controller lease busy');return
         self.owner=ws;last_ping=time.monotonic();seq=0;cache={};running=self.running;rate=collections.deque()
+        if hasattr(self.backend,'on_session_start'):self.backend.on_session_start()
+        profile=getattr(self.backend,'profile',None)
         async def send(msg): await ws.send(json.dumps(dict(v=VERSION,**msg),allow_nan=False))
-        await send(dict(type='welcome',session=secrets.token_hex(16),mode=self.backend.mode,waypoints=self.waypoints,landing_radius_m=self.landing_radius_m,min_clearance_m=self.min_clearance_m))
+        await send(dict(type='welcome',session=secrets.token_hex(16),mode=self.backend.mode,waypoints=self.waypoints,landing_radius_m=self.landing_radius_m,min_clearance_m=self.min_clearance_m,**({'video':self.video} if getattr(self,'video',None) else {}),**({'profile':{'id':profile['id'],'limits':profile['limits']}} if profile else {})))
         async def telemetry():
             nonlocal seq
             while True:
                 if time.monotonic()-last_ping>5: await ws.close(1008,'Heartbeat lost');return
                 if hasattr(self.backend,'refresh'): self.backend.refresh()
                 await self.enforce_obstacle_safety()
-                await send(dict(type='telemetry',seq=seq,vehicles=list(self.backend.vehicles.values()),waypoints=self.waypoints,landing_radius_m=self.landing_radius_m,min_clearance_m=self.min_clearance_m));seq+=1;await asyncio.sleep(.2)
+                await send(dict(type='telemetry',seq=seq,vehicles=list(self.backend.vehicles.values()),waypoints=self.waypoints,landing_radius_m=self.landing_radius_m,min_clearance_m=self.min_clearance_m));seq+=1;await asyncio.sleep(getattr(self.backend,'telemetry_interval',.2))
         ticker=asyncio.create_task(telemetry())
         async def execute(msg,vid,a):
             cid=msg['id']
             try:
                 for action in (a if isinstance(a,list) else [a]):
-                    await asyncio.wait_for(self.backend.execute(vid,action),10)
+                    # Per-action timeout: a slow Tello step must not be reported failed while it is still flying.
+                    await asyncio.wait_for(self.backend.execute(vid,action),getattr(self.backend,'timeout_for',lambda _a:10)(action))
                 ack=dict(type='ack',id=cid,status='completed',reason='Backend acknowledged request; arrival is not asserted')
             except asyncio.CancelledError:
                 ack=dict(type='ack',id=cid,status='failed',reason='Preempted by hold or disconnect')
@@ -99,7 +106,7 @@ class Gateway:
                         if previous!=msg: raise ValueError('Command id reused with different content')
                         await send(ack);continue
                     if hasattr(self.backend,'refresh'):self.backend.refresh()
-                    vid,a=validate_command(msg,self.backend.vehicles,waypoints=self.waypoints,radius=self.landing_radius_m,minimum=self.min_clearance_m)
+                    vid,a=validate_command(msg,self.backend.vehicles,waypoints=self.waypoints,radius=self.landing_radius_m,minimum=self.min_clearance_m,profile=profile)
                     if len(cache)>=1000: raise ValueError('Session command limit reached; reconnect explicitly')
                     if self.backend.mode!='bench' and not self.enabled: raise ValueError('Hardware commands disabled locally')
                     hold_only=all(action['type']=='hold' for action in (a if isinstance(a,list) else [a]))
@@ -119,12 +126,36 @@ class Gateway:
             await asyncio.gather(ticker,*list(running.values()),return_exceptions=True)
             await self.backend.hold();self.owner=None
 
+def video_source(kind,url,frame_url=''):
+    """Optional camera stream shown by the browser. Display only; never a command channel."""
+    if not url: return None
+    from urllib.parse import urlparse
+    u=urlparse(url);loopback=u.hostname in ('localhost','127.0.0.1','::1')
+    if kind not in ('whep','mjpeg'): raise SystemExit('FORTERA_VIDEO_KIND must be whep or mjpeg')
+    if u.username or u.password or not (u.scheme=='https' or (u.scheme=='http' and loopback)): raise SystemExit('FORTERA_VIDEO_URL must be HTTPS (plain HTTP only on loopback) without credentials')
+    out=dict(kind=kind,url=url)
+    if frame_url:
+        f=urlparse(frame_url)
+        if f.username or f.password or not (f.scheme=='https' or (f.scheme=='http' and f.hostname in ('localhost','127.0.0.1','::1'))): raise SystemExit('FORTERA_VIDEO_FRAME_URL must be HTTPS (plain HTTP only on loopback) without credentials')
+        out['frame_url']=frame_url
+    return out
+
+def tello_backend_from_env(env):
+    from tello_backend import TelloBackend
+    overrides=json.loads(env.get('FORTERA_TELLO_LIMITS','{}'))
+    if not isinstance(overrides,dict): raise SystemExit('FORTERA_TELLO_LIMITS must be a JSON object (limits may only be tightened)')
+    profile_id=env.get('FORTERA_TELLO_PROFILE','indoor_demo')
+    if profile_id not in ('indoor_demo','standard'): raise SystemExit('FORTERA_TELLO_PROFILE must be indoor_demo or standard')
+    corridor=json.loads(env.get('FORTERA_TELLO_CORRIDOR','[]'))
+    if not isinstance(corridor,list) or len(corridor)>16 or any(not isinstance(c,dict) or set(c)!={'from','to'} or not all(isinstance(c[k],int) and 1<=c[k]<=8 for k in c) for c in corridor): raise SystemExit('FORTERA_TELLO_CORRIDOR must list at most 16 {"from":1-8,"to":1-8} hops')
+    return TelloBackend(host=env.get('FORTERA_TELLO_HOST','192.168.10.1'),profile=resolve_profile(profile_id,overrides),mission_pads=env.get('FORTERA_TELLO_MISSION_PADS')=='1',corridor=corridor,video=env.get('FORTERA_TELLO_VIDEO','1')=='1')
+
 async def main():
     token=os.environ.get('FORTERA_BRIDGE_TOKEN','');origins=set(os.environ.get('FORTERA_ALLOWED_ORIGINS','http://localhost:8080').split(','))
     if len(token)<24: raise SystemExit('Set a private FORTERA_BRIDGE_TOKEN of at least 24 characters')
     mode=os.environ.get('FORTERA_BACKEND','bench');count=int(os.environ.get('FORTERA_BENCH_COUNT','5'))
     if not 1<=count<=20: raise SystemExit('Bench fleet must contain 1–20 vehicles')
-    backend=BenchBackend(count) if mode=='bench' else MavsdkBackend(json.loads(os.environ.get('FORTERA_MAVSDK_ENDPOINTS','{"F01":"udpin://0.0.0.0:14540"}'))) if mode=='mavsdk' else Ros2Backend() if mode=='ros2' else None
+    backend=BenchBackend(count) if mode=='bench' else MavsdkBackend(json.loads(os.environ.get('FORTERA_MAVSDK_ENDPOINTS','{"F01":"udpin://0.0.0.0:14540"}'))) if mode=='mavsdk' else Ros2Backend() if mode=='ros2' else tello_backend_from_env(os.environ) if mode=='tello' else None
     if backend is None: raise SystemExit('Unknown backend')
     if not 1<=len(backend.vehicles)<=20: raise SystemExit('Fleet must contain 1–20 vehicles')
     tls=None
@@ -134,8 +165,16 @@ async def main():
     if host not in ('127.0.0.1','::1','localhost') and tls is None: raise SystemExit('Non-loopback bridges require TLS')
     points=load_waypoints(os.environ.get('FORTERA_WAYPOINTS','[]'));radius=landing_radius(os.environ.get('FORTERA_LANDING_RADIUS_M','12'))
     minimum=landing_radius(os.environ.get('FORTERA_MIN_CLEARANCE_M','10'))
-    await backend.start();gateway=Gateway(backend,token,origins,os.environ.get('FORTERA_ENABLE_HARDWARE')=='1',points,radius,minimum)
+    video=video_source(os.environ.get('FORTERA_VIDEO_KIND',''),os.environ.get('FORTERA_VIDEO_URL',''),os.environ.get('FORTERA_VIDEO_FRAME_URL',''))
+    video_server=None
+    if mode=='tello' and getattr(backend,'reader',None):
+        from video_server import VideoServer
+        vport=int(os.environ.get('FORTERA_VIDEO_PORT','8766'))
+        video_server=VideoServer(backend.reader,origins,port=vport)
+        video=video or dict(kind='mjpeg',url=f'http://127.0.0.1:{vport}/video',frame_url=f'http://127.0.0.1:{vport}/frame.jpg')
+    await backend.start();gateway=Gateway(backend,token,origins,os.environ.get('FORTERA_ENABLE_HARDWARE')=='1',points,radius,minimum);gateway.video=video
     monitor=asyncio.create_task(gateway.monitor_obstacles())
+    if video_server: await video_server.start()
     try:
         async with serve(gateway.handler,host,int(os.environ.get('FORTERA_PORT','8765')),ssl=tls,max_size=8192,ping_interval=10):
             print('Fortera bridge ready:',mode,flush=True);await asyncio.Future()
