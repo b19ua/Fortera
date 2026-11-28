@@ -1,0 +1,16 @@
+Fortera Tello Bridge — Windows package provenance
+
+Fortera Lovable project:
+Project ID: 5ac1f57c-1ff1-4a5d-8f06-e8897738a0f2
+Source commit: ec8412a2ef9574342ba5cd993516f3ffc7c1d791
+Source status at inspection: published=true, agent status=ready
+
+This branch copies the bridge runtime from that Lovable commit and adds:
+- Windows one-click installer
+- Local GUI manager
+- Exact website-origin allowlist configuration
+- Locally generated pairing and shutdown tokens
+- Authenticated loopback-only graceful shutdown endpoint
+
+The Windows CI workflow runs the complete Python bridge unit-test suite before packaging.
+No physical Tello flight test is claimed.
