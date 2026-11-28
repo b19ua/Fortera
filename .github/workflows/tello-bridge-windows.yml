@@ -33,8 +33,14 @@ jobs:
       - name: Build Windows installation package
         shell: pwsh
         run: |
+          $staging = Join-Path $env:RUNNER_TEMP "ForteraTelloBridge"
+          New-Item -ItemType Directory -Force $staging | Out-Null
+          Copy-Item bridge (Join-Path $staging "bridge") -Recurse -Force
+          Copy-Item INSTALL_FORTERA_TELLO.bat, install_fortera_tello.ps1, FORTERA_TELLO_WINDOWS_README_RU.txt -Destination $staging -Force
+          Get-ChildItem -Path $staging -Directory -Filter "__pycache__" -Recurse | Remove-Item -Recurse -Force
+          Get-ChildItem -Path $staging -File -Filter "*.pyc" -Recurse | Remove-Item -Force
           New-Item -ItemType Directory -Force dist | Out-Null
-          Compress-Archive -Path bridge, INSTALL_FORTERA_TELLO.bat, install_fortera_tello.ps1, FORTERA_TELLO_WINDOWS_README_RU.txt -DestinationPath dist/ForteraTelloBridge_Windows.zip -Force
+          Compress-Archive -Path (Join-Path $staging "*") -DestinationPath dist/ForteraTelloBridge_Windows.zip -Force
 
       - name: Upload tested Windows package
         uses: actions/upload-artifact@v4
